@@ -1,31 +1,4 @@
-# Phase 1 — Core: Store + Server
-
-**Goal:** `planner.mjs` with the store and server sections working. Testable with `curl` — no browser, no client commands yet.
-
-**Deliverable:** A single file `planner.mjs` that you can run with `node planner.mjs server` and verify with curl.
-
-**Do NOT build yet:** browser serving routes, client commands (`open`/`poll`/`end`), browser files. Stub browser routes as 501.
-
----
-
-## File: `planner.mjs`
-
-Structure the file with section comments so later phases can slot in cleanly:
-
-```js
 // ─── 1. CONFIG ────────────────────────────────────────────────────────────────
-// ─── 2. STORE ─────────────────────────────────────────────────────────────────
-// ─── 3. SERVER ────────────────────────────────────────────────────────────────
-// ─── 4. BROWSER OPEN ──────────────────────────────────────────── (phase 2)
-// ─── 5. CLIENT COMMANDS ───────────────────────────────────────── (phase 2)
-// ─── 6. ENTRY POINT ───────────────────────────────────────────────────────────
-```
-
----
-
-## Section 1: Config
-
-```js
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, mkdirSync, existsSync, watch } from 'node:fs';
 import { realpath } from 'node:fs/promises';
@@ -33,20 +6,15 @@ import http from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
 import { EventEmitter } from 'node:events';
+import { spawn } from 'node:child_process';
 
 const PORT = 4737;
 const STATE_DIR = path.join(os.homedir(), '.planner');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const IDLE_MS = parseInt(process.env.PLANNER_IDLE_MS ?? '') || 30 * 60_000;
-```
 
----
+// ─── 2. STORE ─────────────────────────────────────────────────────────────────
 
-## Section 2: Store
-
-All functions read from disk, mutate, write back. No memory cache.
-
-```js
 function readState() {
   if (!existsSync(STATE_FILE)) return { sessions: {} };
   return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
@@ -161,28 +129,15 @@ function findByKey(key) {
   return readState().sessions[key] ?? null;
 }
 
-function listSessions() {
-  return Object.values(readState().sessions);
-}
-```
+// ─── 3. SERVER ────────────────────────────────────────────────────────────────
 
----
-
-## Section 3: Server
-
-Use `node:http` directly. Routing is a simple function that matches method + path prefix.
-
-**Helpers:**
-
-```js
 const events = new EventEmitter();
 events.setMaxListeners(0);
 
-// Presence tracking
-const activePolls = new Map();     // key → count
+const activePolls = new Map();
 const deliveredFeedback = new Set();
-const sseClients = new Map();      // key → Set<res>
-const fileWatchers = new Map();    // key → FSWatcher
+const sseClients = new Map();
+const fileWatchers = new Map();
 
 let idleTimer = null;
 
@@ -219,7 +174,6 @@ function clearDelivered(key) {
   deliveredFeedback.delete(key);
 }
 
-// SSE helpers
 function sseEvent(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
@@ -228,7 +182,6 @@ function broadcastSse(key, event, data) {
   for (const res of sseClients.get(key) ?? []) sseEvent(res, event, data);
 }
 
-// Body parsing
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let data = '';
@@ -241,40 +194,28 @@ function readBody(req) {
   });
 }
 
-// Simple router
-function route(method, pathname, handler) {
-  return { method, pathname, handler };
-}
-
 function send(res, status, body) {
   const json = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(json);
 }
-```
 
-**Request handler:**
-
-```js
 async function handleRequest(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const pathname = url.pathname;
   const method = req.method;
 
   try {
-    // Health
     if (method === 'GET' && pathname === '/health') {
       return send(res, 200, { ok: true, app: 'planner' });
     }
 
-    // Shutdown
     if (method === 'POST' && pathname === '/shutdown') {
       send(res, 200, { ok: true });
       setImmediate(() => process.exit(0));
       return;
     }
 
-    // Register session
     if (method === 'POST' && pathname === '/api/sessions') {
       const body = await readBody(req);
       const canonical = await realpath(path.resolve(body.file));
@@ -288,7 +229,6 @@ async function handleRequest(req, res) {
       return send(res, 200, { key: session.key, url: session.url });
     }
 
-    // Long-poll
     if (method === 'GET' && pathname === '/api/poll') {
       const file = url.searchParams.get('file');
       const canonical = await realpath(path.resolve(file));
@@ -328,7 +268,6 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // Queue prompts
     const promptsMatch = method === 'POST' && pathname.match(/^\/api\/([^/]+)\/prompts$/);
     if (promptsMatch) {
       const key = promptsMatch[1];
@@ -338,7 +277,6 @@ async function handleRequest(req, res) {
       return send(res, 200, { ok: true });
     }
 
-    // Layout warnings
     const warningsMatch = method === 'POST' && pathname.match(/^\/api\/([^/]+)\/layout-warnings$/);
     if (warningsMatch) {
       const key = warningsMatch[1];
@@ -348,7 +286,6 @@ async function handleRequest(req, res) {
       return send(res, 200, { ok: true });
     }
 
-    // Agent reply
     const replyMatch = method === 'POST' && pathname.match(/^\/api\/([^/]+)\/agent-reply$/);
     if (replyMatch) {
       const key = replyMatch[1];
@@ -358,7 +295,6 @@ async function handleRequest(req, res) {
       return send(res, 200, { ok: true });
     }
 
-    // End session
     if (method === 'POST' && pathname === '/api/end') {
       const body = await readBody(req);
       const canonical = await realpath(path.resolve(body.file));
@@ -369,7 +305,6 @@ async function handleRequest(req, res) {
       return send(res, 200, { ok: true });
     }
 
-    // SSE
     const sseMatch = method === 'GET' && pathname.match(/^\/events\/([^/]+)$/);
     if (sseMatch) {
       const key = sseMatch[1];
@@ -399,7 +334,6 @@ async function handleRequest(req, res) {
       return;
     }
 
-    // Phase 3/4 stubs
     if (['/session/', '/plan/', '/browser/'].some(p => pathname.startsWith(p))) {
       res.writeHead(501); res.end('Not implemented yet');
       return;
@@ -418,63 +352,147 @@ function startServer() {
     process.stderr.write(`[planner] server listening on http://127.0.0.1:${PORT}\n`);
   });
 }
-```
 
----
+// ─── 4. BROWSER OPEN ──────────────────────────────────────────────────────────
 
-## Section 6: Entry point (phase 1 stub)
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open'
+    : process.platform === 'win32' ? 'start'
+    : 'xdg-open';
+  spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref();
+}
 
-```js
+// ─── 5. CLIENT COMMANDS ───────────────────────────────────────────────────────
+
+const BASE = `http://127.0.0.1:${PORT}`;
+
+function fetchJson(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const reqOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port,
+      path: urlObj.pathname + urlObj.search,
+      method: options.method ?? 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    };
+    const req = http.request(reqOptions, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(data.trim())); }
+        catch { resolve(data); }
+      });
+    });
+    req.on('error', reject);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+async function ensureServer() {
+  try {
+    const res = await fetchJson(`${BASE}/health`);
+    if (res.ok) return;
+  } catch {}
+
+  const { fileURLToPath } = await import('node:url');
+  const self = fileURLToPath(import.meta.url);
+  spawn(process.execPath, [self, 'server'], { detached: true, stdio: 'ignore' }).unref();
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 100));
+    try {
+      const res = await fetchJson(`${BASE}/health`);
+      if (res.ok) return;
+    } catch {}
+  }
+  throw new Error('[planner] server did not start within 5s');
+}
+
+async function cmdOpen(args) {
+  const file = args[0];
+  if (!file) { process.stderr.write('Usage: node planner.mjs open <file>\n'); process.exit(1); }
+  const canonical = await realpath(path.resolve(file));
+  await ensureServer();
+  const session = await fetchJson(`${BASE}/api/sessions`, {
+    method: 'POST',
+    body: JSON.stringify({ file: canonical }),
+  });
+  openBrowser(session.url);
+  console.log(JSON.stringify({
+    session: { file: canonical, key: session.key, url: session.url, status: 'opened' },
+    next_step: `Run \`node planner.mjs poll ${file}\` to wait for feedback.`,
+  }));
+}
+
+async function cmdPoll(args) {
+  const file = args.find(a => !a.startsWith('-'));
+  if (!file) { process.stderr.write('Usage: node planner.mjs poll <file> [--agent-reply "..."]\n'); process.exit(1); }
+  const canonical = await realpath(path.resolve(file));
+  const key = sessionKey(canonical);
+  await ensureServer();
+
+  const replyIdx = args.indexOf('--agent-reply');
+  if (replyIdx !== -1 && args[replyIdx + 1]) {
+    await fetchJson(`${BASE}/api/${key}/agent-reply`, {
+      method: 'POST',
+      body: JSON.stringify({ text: args[replyIdx + 1] }),
+    });
+  }
+
+  process.stderr.write(`[planner] waiting for feedback on ${file}...\n`);
+  const result = await fetchJson(`${BASE}/api/poll?file=${encodeURIComponent(canonical)}`);
+
+  console.log(JSON.stringify({
+    session: { file: canonical, status: result.status },
+    ...result,
+    next_step: buildNextStep(file, result),
+  }));
+}
+
+function buildNextStep(file, result) {
+  if (result.status === 'ended') return 'Session ended.';
+  if (result.status === 'waiting') return `No feedback yet. Re-run \`node planner.mjs poll ${file}\`.`;
+  const hasErrors = (result.layout_warnings ?? []).some(w => w.severity === 'error');
+  if (hasErrors) return `Fix layout errors in ${file} first, then re-run poll.`;
+  return `Apply feedback to ${file}, then run \`node planner.mjs poll ${file} --agent-reply "what you changed"\`.`;
+}
+
+async function cmdEnd(args) {
+  const file = args[0];
+  if (!file) { process.stderr.write('Usage: node planner.mjs end <file>\n'); process.exit(1); }
+  const canonical = await realpath(path.resolve(file));
+  await ensureServer();
+  await fetchJson(`${BASE}/api/end`, { method: 'POST', body: JSON.stringify({ file: canonical }) });
+  console.log(JSON.stringify({ session: { file: canonical, status: 'ended' } }));
+}
+
+// ─── 6. ENTRY POINT ───────────────────────────────────────────────────────────
+
 const cmd = process.argv[2];
+const args = process.argv.slice(3);
+
+if (!cmd || cmd === '--help') {
+  process.stderr.write('Usage: node planner.mjs open|poll|end|server <file>\n');
+  process.exit(0);
+}
+
+if (cmd === '--version') {
+  console.log('0.1.0');
+  process.exit(0);
+}
+
 if (cmd === 'server') {
   startServer();
+} else if (cmd === 'open') {
+  cmdOpen(args).catch(err => { process.stderr.write(`[planner] ${err.message}\n`); process.exit(1); });
+} else if (cmd === 'poll') {
+  cmdPoll(args).catch(err => { process.stderr.write(`[planner] ${err.message}\n`); process.exit(1); });
+} else if (cmd === 'end') {
+  cmdEnd(args).catch(err => { process.stderr.write(`[planner] ${err.message}\n`); process.exit(1); });
 } else {
-  process.stderr.write('Phase 2 not built yet — client commands coming soon.\n');
+  process.stderr.write(`[planner] unknown command: ${cmd}\n`);
   process.exit(1);
 }
-```
-
----
-
-## Verification
-
-```sh
-# Start server
-node planner.mjs server &
-sleep 1
-
-# 1. Health
-curl -s http://127.0.0.1:4737/health
-# → {"ok":true,"app":"planner"}
-
-# 2. Register session
-echo "<h1>Hello</h1>" > /tmp/plan.html
-curl -s -X POST http://127.0.0.1:4737/api/sessions \
-  -H "Content-Type: application/json" \
-  -d "{\"file\":\"/tmp/plan.html\"}"
-# → {"key":"<16-char-hex>","url":"..."}
-
-export KEY=<paste key>
-
-# 3. Poll with nothing queued → waiting
-curl -s "http://127.0.0.1:4737/api/poll?file=/tmp/plan.html"
-# → (leading space) {"status":"waiting"}
-
-# 4. Queue a prompt
-curl -s -X POST "http://127.0.0.1:4737/api/$KEY/prompts" \
-  -H "Content-Type: application/json" \
-  -d '{"prompts":[{"uid":"1","prompt":"Make it blue","tag":"message","selector":"h1","text":"Hello"}],"dom_snapshot":"uid=1 h1 Hello"}'
-# → {"ok":true}
-
-# 5. Poll now returns feedback
-curl -s "http://127.0.0.1:4737/api/poll?file=/tmp/plan.html"
-# → {"status":"feedback","prompts":[...],"layout_warnings":[],"dom_snapshot":"uid=1 h1 Hello"}
-
-# 6. State file written to disk
-cat ~/.planner/state.json
-
-# 7. Shutdown
-curl -s -X POST http://127.0.0.1:4737/shutdown
-```
-
-All 7 checks passing = Phase 1 complete.

@@ -1,11 +1,11 @@
 # Planner
 
-A human-in-the-loop review tool for AI agents. Your agent writes an HTML artifact, opens it in your browser, then waits while you annotate it and send feedback. The whole loop runs over localhost — no accounts, no cloud, no telemetry.
+A human-in-the-loop review tool for AI agents. Your agent writes an HTML plan, opens it in your browser, then waits while you annotate it and send feedback. The whole loop runs over localhost — no accounts, no cloud, no telemetry.
 
 ## How it works
 
-1. The agent writes an HTML file (a design, report, diagram, plan, etc.)
-2. It calls `planner open` — your browser opens showing the artifact
+1. The agent writes an HTML plan (a design, report, diagram, proposal, etc.)
+2. It calls `planner open` — your browser opens showing the plan
 3. You click elements to annotate them, type notes, and hit **Send**
 4. The agent receives your feedback as structured JSON and makes changes
 5. It calls `planner poll --agent-reply "here's what I changed"` — you see the reply in the browser and can send more feedback
@@ -43,11 +43,11 @@ source ~/.bashrc   # or ~/.zshrc
 Add the following to `~/.claude/CLAUDE.md` (create the file if it doesn't exist):
 
 ```markdown
-## Showing artifacts for review
+## Showing plans for review
 
 When you want to show me something visual for feedback, use the planner tool:
 
-  node $PLANNER_DIR/planner.mjs open <file>          # open artifact in browser
+  node $PLANNER_DIR/planner.mjs open <file>          # open plan in browser
   node $PLANNER_DIR/planner.mjs poll <file>          # wait for my feedback
   node $PLANNER_DIR/planner.mjs poll <file> --agent-reply "message"   # show a reply, then wait
   node $PLANNER_DIR/planner.mjs end <file>           # end the session
@@ -75,7 +75,7 @@ node $PLANNER_DIR/planner.mjs --version
 ## Usage example (what the agent does)
 
 ```sh
-# Agent writes artifact
+# Agent writes a plan
 echo "<h1>My Plan</h1><p>Here is the plan...</p>" > /tmp/plan.html
 
 # Agent opens it — your browser opens

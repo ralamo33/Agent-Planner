@@ -1,6 +1,6 @@
 # Planner — Build Plan Overview
 
-Human-in-the-loop review tool for AI agents. The agent writes an HTML artifact, opens it in a browser, then long-polls for feedback the human writes by annotating the page. Runs entirely on localhost. No telemetry, no external services, no npm dependencies.
+Human-in-the-loop review tool for AI agents. The agent writes an HTML plan, opens it in a browser, then long-polls for feedback the human writes by annotating the page. Runs entirely on localhost. No telemetry, no external services, no npm dependencies.
 
 ## Installation (for users)
 
@@ -8,7 +8,7 @@ Human-in-the-loop review tool for AI agents. The agent writes an HTML artifact, 
 2. Add `export PLANNER_DIR=/path/to/repo` to `.bashrc` / `.zshrc`
 3. Add to `~/.claude/CLAUDE.md`:
    ```
-   To show an artifact to the user for review:
+   To show a plan to the user for review:
      node $PLANNER_DIR/planner.mjs open <file>
      node $PLANNER_DIR/planner.mjs poll <file>
      node $PLANNER_DIR/planner.mjs poll <file> --agent-reply "message"
@@ -18,10 +18,10 @@ Human-in-the-loop review tool for AI agents. The agent writes an HTML artifact, 
 ## Agent-facing interface
 
 ```sh
-node $PLANNER_DIR/planner.mjs open artifact.html
-node $PLANNER_DIR/planner.mjs poll artifact.html
-node $PLANNER_DIR/planner.mjs poll artifact.html --agent-reply "here's what I changed"
-node $PLANNER_DIR/planner.mjs end artifact.html
+node $PLANNER_DIR/planner.mjs open plan.html
+node $PLANNER_DIR/planner.mjs poll plan.html
+node $PLANNER_DIR/planner.mjs poll plan.html --agent-reply "here's what I changed"
+node $PLANNER_DIR/planner.mjs end plan.html
 ```
 
 Poll returns JSON to stdout:
@@ -45,7 +45,7 @@ planner/
 ├── browser/
 │   ├── chrome.js        (~300 lines — outer frame JS, served as static file)
 │   ├── chrome.css       (~200 lines)
-│   └── sdk.js           (~380 lines — injected into artifact iframe at serve time)
+│   └── sdk.js           (~380 lines — injected into plan iframe at serve time)
 ├── plans/               (build plans, not shipped)
 └── README.md            (human install guide)
 ```
@@ -63,7 +63,7 @@ planner.mjs acting as CLI (thin HTTP client)
   ↕ HTTP to localhost:4737
 planner.mjs acting as server (spawned detached)
   ↕ HTTP + SSE
-Browser: chrome shell (outer) + artifact iframe (sandboxed)
+Browser: chrome shell (outer) + plan iframe (sandboxed)
   ↑ human sits here
 ```
 
@@ -91,7 +91,7 @@ Stored at `~/.planner/state.json`:
   "sessions": {
     "<key16>": {
       "key": "a1b2c3d4e5f6a7b8",
-      "file": "/absolute/path/artifact.html",
+      "file": "/absolute/path/plan.html",
       "url": "http://127.0.0.1:4737/session/<key>",
       "status": "open",
       "pending_prompts": 0,
@@ -122,16 +122,16 @@ Session key: `sha256(realpath(file)).hex().slice(0, 16)`
 | POST | `/api/:key/agent-reply` | CLI sends agent reply text |
 | POST | `/api/end` | End session |
 | GET | `/session/:key` | Chrome shell HTML |
-| GET | `/artifact/:key/index.html` | Artifact HTML with SDK injected |
-| GET | `/artifact/:key/*` | Sibling assets (path traversal guarded) |
+| GET | `/plan/:key/index.html` | Plan HTML with SDK injected |
+| GET | `/plan/:key/*` | Sibling assets (path traversal guarded) |
 | GET | `/events/:key` | SSE stream |
 | GET | `/browser/:file` | Serve files from `browser/` directory |
 
 ## Iframe sandbox + SDK injection
 
-The artifact is served inside `<iframe sandbox="allow-scripts allow-forms allow-popups allow-downloads">`. `allow-same-origin` is intentionally omitted — chrome ↔ iframe can only communicate via `postMessage`.
+The plan is served inside `<iframe sandbox="allow-scripts allow-forms allow-popups allow-downloads">`. `allow-same-origin` is intentionally omitted — chrome ↔ iframe can only communicate via `postMessage`.
 
-`browser/sdk.js` is injected at serve time: the server reads the artifact HTML, appends `<script src="/browser/sdk.js?key=..."></script>` before `</body>`, and serves the result. The file on disk is never modified.
+`browser/sdk.js` is injected at serve time: the server reads the plan HTML, appends `<script src="/browser/sdk.js?key=..."></script>` before `</body>`, and serves the result. The file on disk is never modified.
 
 ## postMessage protocol (chrome ↔ iframe)
 
@@ -169,5 +169,5 @@ Response body is `" " " " ... "<JSON>"` — leading spaces are heartbeat bytes s
 | **1 — Core: store + server** | `planner.mjs` sections 1–3 (no browser serving yet) | `curl` routes directly |
 | **2 — Client commands** | `planner.mjs` sections 4–6 | `node planner.mjs open/poll/end` from terminal |
 | **3 — Chrome shell + SSE** | `browser/chrome.js`, `browser/chrome.css`, chrome HTML route | Open browser, verify presence + chat |
-| **4 — Artifact SDK + injection** | `browser/sdk.js`, artifact routes | Annotations work, prompts reach poll |
+| **4 — Plan SDK + injection** | `browser/sdk.js`, plan routes | Annotations work, prompts reach poll |
 | **5 — Layout audit** | Audit block in `sdk.js`, layout gate in `chrome.js` | Overflow HTML triggers `layout_warnings` |
