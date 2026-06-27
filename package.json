@@ -1,0 +1,10 @@
+{
+  "name": "lavish",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "lavish": "./bin/lavish" },
+  "dependencies": {
+    "express": "^5.2.1",
+    "open": "^10.2.0"
+  }
+}

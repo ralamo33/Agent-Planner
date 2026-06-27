@@ -1,17 +1,30 @@
-# Lavish — Build Plan Overview
+# Planner — Build Plan Overview
 
-Clean Node.js reimplementation of lavish-axi. A human-in-the-loop review tool an AI agent drives with 3 bash commands. Runs entirely on localhost. No telemetry, no external services, no opaque dependencies.
+Human-in-the-loop review tool for AI agents. The agent writes an HTML artifact, opens it in a browser, then long-polls for feedback the human writes by annotating the page. Runs entirely on localhost. No telemetry, no external services, no npm dependencies.
+
+## Installation (for users)
+
+1. Clone the repo anywhere
+2. Add `export PLANNER_DIR=/path/to/repo` to `.bashrc` / `.zshrc`
+3. Add to `~/.claude/CLAUDE.md`:
+   ```
+   To show an artifact to the user for review:
+     node $PLANNER_DIR/planner.mjs open <file>
+     node $PLANNER_DIR/planner.mjs poll <file>
+     node $PLANNER_DIR/planner.mjs poll <file> --agent-reply "message"
+     node $PLANNER_DIR/planner.mjs end <file>
+   ```
 
 ## Agent-facing interface
 
-```
-lavish open artifact.html         # register session, open browser
-lavish poll artifact.html         # block until human sends feedback, return JSON
-lavish poll artifact.html --agent-reply "here's what I changed"
-lavish end artifact.html          # end session
+```sh
+node $PLANNER_DIR/planner.mjs open artifact.html
+node $PLANNER_DIR/planner.mjs poll artifact.html
+node $PLANNER_DIR/planner.mjs poll artifact.html --agent-reply "here's what I changed"
+node $PLANNER_DIR/planner.mjs end artifact.html
 ```
 
-Poll returns:
+Poll returns JSON to stdout:
 ```json
 {
   "session": { "file": "...", "status": "feedback" },
@@ -27,60 +40,51 @@ Poll returns:
 ## File structure
 
 ```
-lavish/
-├── package.json
-├── bin/
-│   └── lavish                      (~3 lines: shebang + ESM import + dispatch)
-└── src/
-    ├── cli.js                      (~200 lines)
-    ├── server.js                   (~280 lines)
-    ├── store.js                    (~130 lines)
-    └── browser/
-        ├── artifact-sdk.js         (~380 lines — browser JS, no ESM imports)
-        ├── chrome-client.js        (~300 lines — browser JS)
-        └── chrome.css              (~200 lines)
+planner/
+├── planner.mjs          (single file: client + server + store, ~700 lines, zero deps)
+├── browser/
+│   ├── chrome.js        (~300 lines — outer frame JS, served as static file)
+│   ├── chrome.css       (~200 lines)
+│   └── sdk.js           (~380 lines — injected into artifact iframe at serve time)
+├── plans/               (build plans, not shipped)
+└── README.md            (human install guide)
 ```
 
-**Dependencies — only two:**
-- `express` ^5
-- `open` ^10
+**Zero npm dependencies.** Uses only Node built-ins: `node:http`, `node:fs`, `node:crypto`, `node:path`, `node:os`, `node:child_process`, `node:url`.
+
+One exception: opening the browser. Use `node:child_process` to call `xdg-open` (Linux), `open` (Mac), or `start` (Windows) directly — no `open` package needed.
 
 ## Architecture
 
 ```
 Agent (Claude, etc.)
-  ↕ 3 bash commands: open / poll / end
-CLI (thin HTTP client, src/cli.js)
-  ↕ HTTP to localhost:4387
-Express server (src/server.js) + state (~/.lavish/state.json)
+  ↕ node $PLANNER_DIR/planner.mjs open|poll|end
+planner.mjs acting as CLI (thin HTTP client)
+  ↕ HTTP to localhost:4737
+planner.mjs acting as server (spawned detached)
   ↕ HTTP + SSE
-Browser: chrome shell (outer frame) + artifact iframe
+Browser: chrome shell (outer) + artifact iframe (sandboxed)
   ↑ human sits here
 ```
 
-**Key invariants:**
-- Session key = `sha256(realpath(file)).hex().slice(0, 16)` — two paths to the same file collapse to one session
-- State is read from disk on every op, written back immediately — no in-memory cache, sessions survive restarts
-- Iframe sandboxed without `allow-same-origin` — chrome ↔ iframe comms are postMessage only
-- SDK injected at serve time (script tag appended), artifact file never modified on disk
-- Poll streams whitespace heartbeat every 15s so agent harness doesn't timeout; JSON payload ends the response
-- Server self-shuts after 30 min idle
+`planner.mjs` is both client and server. When the client detects no server running (`/health` fails), it spawns a detached copy of itself with `node planner.mjs server` and waits up to 5s for it to come up.
 
-## Build phases
+**Port:** 4737
 
-Each phase is testable before the next one starts.
+## Single-file design
 
-| Phase | Files | Test when done |
-|---|---|---|
-| **1 — Store + server core** | `package.json`, `src/store.js`, `src/server.js` | `curl` routes directly |
-| **2 — CLI** | `bin/lavish`, `src/cli.js` | `lavish open` + `lavish poll` from terminal |
-| **3 — Chrome shell + SSE** | `src/browser/chrome.css`, `src/browser/chrome-client.js`, chrome HTML in server.js | Open browser, verify presence states + chat |
-| **4 — Artifact SDK + injection** | `src/browser/artifact-sdk.js`, artifact routes in server.js | Annotations work in iframe, prompts reach poll |
-| **5 — Layout audit** | Layout audit block in `artifact-sdk.js`, layout gate in `chrome-client.js` | Overflow HTML triggers `layout_warnings` in poll |
+`planner.mjs` is divided into clearly labelled sections:
 
-See `plans/phase-*.md` for per-phase implementation detail.
+1. **Config + constants** — port, state path, idle timeout
+2. **Store** — all `~/.planner/state.json` read/write functions
+3. **Server** — `node:http` request handler, routing, SSE, long-poll
+4. **Browser open** — cross-platform `xdg-open` / `open` / `start`
+5. **Client commands** — `open`, `poll`, `end`, `ensureServer`
+6. **Entry point** — dispatch on `process.argv[2]`
 
 ## State schema
+
+Stored at `~/.planner/state.json`:
 
 ```json
 {
@@ -88,7 +92,7 @@ See `plans/phase-*.md` for per-phase implementation detail.
     "<key16>": {
       "key": "a1b2c3d4e5f6a7b8",
       "file": "/absolute/path/artifact.html",
-      "url": "http://127.0.0.1:4387/session/<key>",
+      "url": "http://127.0.0.1:4737/session/<key>",
       "status": "open",
       "pending_prompts": 0,
       "prompts": [],
@@ -103,11 +107,13 @@ See `plans/phase-*.md` for per-phase implementation detail.
 
 Status flow: `open` → `feedback` (prompts queued) → `open` (after takeFeedback clears them) → `ended`
 
+Session key: `sha256(realpath(file)).hex().slice(0, 16)`
+
 ## Server routes
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/health` | `{ ok: true, app: "lavish" }` |
+| GET | `/health` | `{ ok: true, app: "planner" }` |
 | POST | `/shutdown` | Graceful exit |
 | POST | `/api/sessions` | Register/resume session |
 | GET | `/api/poll` | Long-poll with heartbeat |
@@ -119,27 +125,30 @@ Status flow: `open` → `feedback` (prompts queued) → `open` (after takeFeedba
 | GET | `/artifact/:key/index.html` | Artifact HTML with SDK injected |
 | GET | `/artifact/:key/*` | Sibling assets (path traversal guarded) |
 | GET | `/events/:key` | SSE stream |
-| GET | `/sdk.js` | Generated SDK IIFE |
-| GET | `/chrome-client.js` | Browser chrome script |
-| GET | `/chrome.css` | Browser chrome styles |
+| GET | `/browser/:file` | Serve files from `browser/` directory |
+
+## Iframe sandbox + SDK injection
+
+The artifact is served inside `<iframe sandbox="allow-scripts allow-forms allow-popups allow-downloads">`. `allow-same-origin` is intentionally omitted — chrome ↔ iframe can only communicate via `postMessage`.
+
+`browser/sdk.js` is injected at serve time: the server reads the artifact HTML, appends `<script src="/browser/sdk.js?key=..."></script>` before `</body>`, and serves the result. The file on disk is never modified.
 
 ## postMessage protocol (chrome ↔ iframe)
 
 **SDK → chrome:**
 | Type | When |
 |---|---|
-| `lavish:queuePrompt` | User queues an annotation |
-| `lavish:sendQueuedPrompts` | Cmd+Enter in annotation card |
-| `lavish:snapshot` | Response to `requestSnapshot` |
-| `lavish:layoutWarnings` | After layout audit completes |
-| `lavish:scroll` | On scroll (RAF-throttled) |
+| `planner:queuePrompt` | User queues an annotation |
+| `planner:snapshot` | Response to `requestSnapshot` |
+| `planner:layoutWarnings` | After layout audit completes |
+| `planner:scroll` | On scroll (RAF-throttled) |
 
 **Chrome → SDK:**
 | Type | When |
 |---|---|
-| `lavish:setAnnotationMode` | On toggle switch |
-| `lavish:requestSnapshot` | Before submit |
-| `lavish:restoreScroll` | After iframe load |
+| `planner:setAnnotationMode` | On toggle switch |
+| `planner:requestSnapshot` | Before submit |
+| `planner:restoreScroll` | After iframe load |
 
 ## Presence states (SSE → browser)
 
@@ -147,4 +156,18 @@ Status flow: `open` → `feedback` (prompts queued) → `open` (after takeFeedba
 - `listening` — poll blocking
 - `working` — feedback delivered, agent processing
 
-Tracked in-memory only (not persisted). Changes pushed over SSE as `agent-presence` events.
+Tracked in-memory only (not persisted). Pushed over SSE as `agent-presence` events.
+
+## Long-poll heartbeat
+
+Response body is `" " " " ... "<JSON>"` — leading spaces are heartbeat bytes sent every 15s, JSON payload ends the stream. `JSON.parse` ignores leading whitespace, so the client just does `JSON.parse(responseText)`.
+
+## Build phases
+
+| Phase | Scope | Test when done |
+|---|---|---|
+| **1 — Core: store + server** | `planner.mjs` sections 1–3 (no browser serving yet) | `curl` routes directly |
+| **2 — Client commands** | `planner.mjs` sections 4–6 | `node planner.mjs open/poll/end` from terminal |
+| **3 — Chrome shell + SSE** | `browser/chrome.js`, `browser/chrome.css`, chrome HTML route | Open browser, verify presence + chat |
+| **4 — Artifact SDK + injection** | `browser/sdk.js`, artifact routes | Annotations work, prompts reach poll |
+| **5 — Layout audit** | Audit block in `sdk.js`, layout gate in `chrome.js` | Overflow HTML triggers `layout_warnings` |
