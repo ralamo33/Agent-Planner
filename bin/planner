@@ -1,0 +1,40 @@
+#!/usr/bin/env node
+import { cmdOpen, cmdUpdate, cmdReopen, cmdRestore } from '../src/cli.js';
+import { startServer } from '../src/server.js';
+
+const cmd = process.argv[2];
+const args = process.argv.slice(3);
+
+if (!cmd || cmd === '--help') {
+  process.stderr.write([
+    'Usage: planner <command> [args]',
+    '',
+    'Agent commands:',
+    '  open <name> <path>    Open a new plan and wait for feedback',
+    '  update <name> <path>  Update an existing plan and wait for feedback',
+    '',
+    'User commands:',
+    '  reopen <name>         Reopen an active plan in the browser',
+    '  restore <name>        Restore an archived plan to active',
+    '',
+    'Internal:',
+    '  server                Start the background server',
+  ].join('\n') + '\n');
+  process.exit(0);
+}
+
+if (cmd === '--version') {
+  console.log('0.1.0');
+  process.exit(0);
+}
+
+const handler = { open: cmdOpen, update: cmdUpdate, reopen: cmdReopen, restore: cmdRestore }[cmd];
+
+if (handler) {
+  handler(args).catch(err => { process.stderr.write(`[planner] ${err.message}\n`); process.exit(1); });
+} else if (cmd === 'server') {
+  startServer();
+} else {
+  process.stderr.write(`[planner] unknown command: ${cmd}\n`);
+  process.exit(1);
+}

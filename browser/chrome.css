@@ -1,0 +1,69 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; overflow: hidden; font-family: system-ui, sans-serif; background: #f5f5f5; }
+
+.bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 16px; background: #1a1a1a; color: #fff;
+  height: 44px; flex-shrink: 0;
+}
+.brand { font-weight: 600; font-size: 14px; }
+.filename { font-size: 12px; color: #aaa; flex: 1; }
+.annotate-toggle { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+
+.layout { display: flex; height: calc(100vh - 44px); }
+
+.frame { flex: 1; position: relative; background: #fff; }
+.frame iframe { width: 100%; height: 100%; border: none; display: block; }
+
+.panel {
+  width: 320px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  border-left: 1px solid #ddd; background: #fff;
+}
+.chat { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.bubble { max-width: 90%; padding: 8px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; word-break: break-word; }
+.bubble-user { background: #e8f0fe; align-self: flex-end; border-bottom-right-radius: 4px; }
+.bubble-agent { background: #f0f0f0; align-self: flex-start; border-bottom-left-radius: 4px; }
+
+.composer { padding: 12px; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 8px; }
+.presence-banner { font-size: 12px; color: #888; padding: 6px 8px; background: #fffbe6; border-radius: 6px; border: 1px solid #ffe58f; }
+.annotation-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.pill { background: #e8f0fe; color: #1a73e8; font-size: 11px; padding: 2px 8px; border-radius: 10px; cursor: default; }
+.composer textarea { resize: none; border: 1px solid #ddd; border-radius: 8px; padding: 8px; font-size: 13px; font-family: inherit; width: 100%; }
+.composer textarea:focus { outline: none; border-color: #1a73e8; }
+
+.send-row { display: flex; gap: 8px; }
+.send-row button { flex: 1; padding: 8px; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; }
+#sendBtn { background: #1a73e8; color: #fff; }
+#sendBtn:disabled { background: #ccc; cursor: not-allowed; }
+#endBtn { background: #f5f5f5; color: #666; }
+#endBtn:hover { background: #eee; }
+
+.ended-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.ended-overlay[hidden] { display: none; }
+.ended-box { background: #fff; padding: 32px; border-radius: 16px; text-align: center; }
+.ended-box h2 { margin-bottom: 8px; }
+.ended-box p { color: #666; font-size: 14px; }
+
+.layout-gate {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0.92);
+  display: flex; align-items: center; justify-content: center; z-index: 10;
+}
+.layout-gate[hidden] { display: none; }
+.layout-gate-box {
+  text-align: center; padding: 24px; background: #fff;
+  border-radius: 12px; box-shadow: 0 2px 16px rgba(0,0,0,.1);
+  font-size: 14px; color: #444;
+}
+.layout-gate-box p { margin-bottom: 12px; }
+.layout-gate-box button {
+  padding: 6px 16px; border: 1px solid #ddd; border-radius: 6px;
+  background: #fff; cursor: pointer; font-size: 13px;
+}
+.layout-gate-box button:hover { background: #f5f5f5; }
