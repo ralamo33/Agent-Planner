@@ -54,7 +54,9 @@ function markDelivered(key) {
 }
 
 function clearDelivered(key) {
-  deliveredFeedback.delete(key);
+  if (deliveredFeedback.delete(key)) {
+    broadcastSse(key, 'agent-presence', { state: computePresence(key) });
+  }
 }
 
 function sseEvent(res, event, data) {
@@ -133,7 +135,7 @@ function createChromeHtml(session) {
   <div class="layout">
     <div class="frame">
       <iframe id="planFrame"
-        sandbox="allow-scripts allow-forms allow-popups allow-downloads"
+        sandbox="allow-scripts"
         data-plan-src="/plan/${encodeURIComponent(session.key)}/index.html"
         title="Plan preview"></iframe>
       <div class="layout-gate" id="layoutGate">
@@ -366,7 +368,7 @@ async function handleRequest(req, res) {
       if (!mime) { res.writeHead(403); res.end('Forbidden'); return; }
       try {
         const content = readFileSync(path.join(BROWSER_DIR, filename));
-        res.writeHead(200, { 'Content-Type': mime });
+        res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': 'no-store' });
         res.end(content);
       } catch { res.writeHead(404); res.end('Not found'); }
       return;

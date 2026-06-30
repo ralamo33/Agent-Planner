@@ -33,10 +33,17 @@ function fetchJson(url, options = {}) {
 }
 
 function openBrowser(url) {
-  const cmd = process.platform === 'darwin' ? 'open'
-    : process.platform === 'win32' ? 'start'
-    : 'xdg-open';
-  spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref();
+  let cmd, args;
+  if (process.platform === 'darwin') {
+    cmd = 'open'; args = [url];
+  } else if (process.platform === 'win32') {
+    cmd = 'cmd'; args = ['/c', 'start', '', url];
+  } else if (process.env.WSL_DISTRO_NAME || process.env.WSL_INTEROP) {
+    cmd = 'powershell.exe'; args = ['-NoProfile', '-c', `Start-Process '${url}'`];
+  } else {
+    cmd = 'xdg-open'; args = [url];
+  }
+  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
 }
 
 async function ensureServer() {
@@ -89,6 +96,7 @@ export async function cmdOpen(args) {
     process.exit(1);
   }
   openBrowser(res.url);
+  process.stderr.write(`[planner] session URL: ${res.url}\n`);
   process.stderr.write(`[planner] waiting for feedback on "${name}"...\n`);
   const result = await poll(name);
   console.log(JSON.stringify({

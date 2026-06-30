@@ -92,6 +92,13 @@
     var noteInput = shadow.getElementById('noteInput');
     noteInput.focus();
 
+    noteInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        shadow.getElementById('queueBtn').click();
+      }
+    });
+
     shadow.getElementById('queueBtn').addEventListener('click', function () {
       var note = noteInput.value.trim();
       if (note) {
@@ -250,7 +257,7 @@
       if (rect.width === 0 && rect.height === 0) continue;
 
       var hOverflow = el.scrollWidth - el.clientWidth;
-      if (hOverflow > 1) {
+      if (hOverflow > 1 && style.display !== 'inline') {
         var clipsH = (style.overflowX === 'hidden' || style.overflowX === 'clip')
           && hasReadableText(el) && !isIntentionalTruncation(style);
         findings.push({

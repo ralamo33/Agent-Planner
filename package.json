@@ -2,9 +2,5 @@
   "name": "planner",
   "version": "0.1.0",
   "type": "module",
-  "bin": { "planner": "./bin/planner" },
-  "dependencies": {
-    "express": "^5.2.1",
-    "open": "^10.2.0"
-  }
+  "bin": { "planner": "./bin/planner" }
 }

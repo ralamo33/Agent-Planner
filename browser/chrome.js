@@ -17,6 +17,7 @@
 
   let queued = JSON.parse(sessionStorage.getItem('planner:queued:' + key) ?? '[]');
   let agentPresence = 'waiting';
+  let promptsSent = false;
   let ended = false;
   let snapshotResolve = null;
   let layoutErrors = 0;
@@ -56,9 +57,11 @@
 
   function setPresence(state) {
     agentPresence = state;
+    if (state === 'listening') promptsSent = false;
     presenceBanner.hidden = state !== 'waiting' && state !== 'working';
-    presenceBanner.textContent = state === 'waiting' ? 'Agent is not listening yet'
-      : state === 'working' ? 'Agent is working…' : '';
+    presenceBanner.textContent = state === 'working' ? 'Agent working…'
+      : state === 'waiting' ? (promptsSent ? 'Agent working…' : 'Agent is not listening yet')
+      : '';
     updateSendButton();
   }
 
@@ -118,6 +121,7 @@
         body: JSON.stringify({ prompts: clean, dom_snapshot: snapshot }),
       });
       if (res.ok) {
+        promptsSent = true;
         queued = [];
         persistQueue();
         chatInput.value = '';
